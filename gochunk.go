@@ -79,12 +79,6 @@ func NewChunkedUpload(fPath string, opts ...func(*ChunkedUpload)) (*ChunkedUploa
 		chunkSize: DefaultChunkSize,
 	}
 
-	mType, err := mimetype.DetectFile(fPath)
-	if err != nil {
-		return nil, err
-	}
-	c.mimeType = mType.String()
-
 	for _, opt := range opts {
 		opt(c)
 	}
@@ -100,6 +94,12 @@ func NewChunkedUpload(fPath string, opts ...func(*ChunkedUpload)) (*ChunkedUploa
 		c.ctx = ctx
 		c.cancel = cancel
 	}
+
+	mType, err := mimetype.DetectFile(fPath)
+	if err != nil {
+		return nil, err
+	}
+	c.mimeType = mType.String()
 
 	if c.handlerFunc == nil {
 		return nil, errors.New("handler function to process chunks is required")
@@ -262,7 +262,9 @@ func (cu *ChunkedUpload) consumer(idx int, wg *sync.WaitGroup) {
 	}
 }
 
-func (cu *ChunkedUpload) ChunkedUploadHandler() error {
+// ChunkHandler handles the processing of chunks from producer to consumer
+func (cu *ChunkedUpload) ChunkHandler() error {
+	defer cu.cancel()
 	var wg sync.WaitGroup
 
 	go cu.producer()
