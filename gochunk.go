@@ -2,10 +2,7 @@ package gochunk
 
 import (
 	"context"
-	"crypto/md5"
-	"encoding/hex"
 	"errors"
-	"fmt"
 	"github.com/gabriel-vasile/mimetype"
 	"github.com/google/uuid"
 	"io"
@@ -162,39 +159,37 @@ func WithHandlerFunc(f func(ChunkedUploadRequest) error) func(upload *ChunkedUpl
 	}
 }
 
-func main() {
-	fPath := "/home/tripg/workspace/OS-2.tiff"
-
-	ctx, cancel := context.WithCancel(context.Background())
-
-	cu, err := NewChunkedUpload(fPath, WithCtx(ctx, cancel), WithNWorkers(4), WithUploadID(uuid.New()), WithHandlerFunc(func(request ChunkedUploadRequest) error {
-		fmt.Println(request.Part, len(request.Content), request.Complete)
-		return nil
-	}))
-	if err != nil {
-		fmt.Println(err)
-		return
-	}
-
-	defer cu.cancel()
-
-	err = cu.chunkedUploadHandler()
-	if err != nil {
-		fmt.Println(err)
-		return
-	}
-
+// GetChunkSize returns the chunk size
+func (cu *ChunkedUpload) GetChunkSize() int64 {
+	return cu.chunkSize
 }
 
-func calChunkMD5(chunk []byte) string {
-	checkSum := md5.Sum(chunk)
-	return hex.EncodeToString(checkSum[:])
+// GetSuccess returns the number of success chunks
+func (cu *ChunkedUpload) GetSuccess() int {
+	return cu.success
 }
 
+// GetFailure returns the number of failed chunks
+func (cu *ChunkedUpload) GetFailure() int {
+	return cu.failure
+}
+
+// GetTotal returns the total number of chunks
+func (cu *ChunkedUpload) GetTotal() int {
+	return cu.total
+}
+
+// GetMIME returns the MIME type of the file
+func (cu *ChunkedUpload) GetMIME() string {
+	return cu.mimeType
+}
+
+// getNChunks calculates the number of chunks needed to process the input file
 func (cu *ChunkedUpload) getNChunks(fInfo os.FileInfo) uint64 {
 	return uint64(math.Ceil(float64(fInfo.Size()) / float64(cu.chunkSize)))
 }
 
+// producer produces the chunks and send them to the channel
 func (cu *ChunkedUpload) producer() {
 	defer close(cu.cUpload)
 	f, _ := os.Open(cu.fPath)
@@ -239,6 +234,8 @@ func (cu *ChunkedUpload) producer() {
 		cu.cUpload <- chunkedReq
 	}
 }
+
+// consumer reads the request from channel and further process it
 func (cu *ChunkedUpload) consumer(idx int, wg *sync.WaitGroup) {
 	defer wg.Done()
 	for {
@@ -265,8 +262,7 @@ func (cu *ChunkedUpload) consumer(idx int, wg *sync.WaitGroup) {
 	}
 }
 
-func (cu *ChunkedUpload) chunkedUploadHandler() error {
-
+func (cu *ChunkedUpload) ChunkedUploadHandler() error {
 	var wg sync.WaitGroup
 
 	go cu.producer()

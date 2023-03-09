@@ -22,7 +22,7 @@ func TestNewChunkedUpload(t *testing.T) {
 
 	defer cu.cancel()
 
-	err = cu.chunkedUploadHandler()
+	err = cu.ChunkedUploadHandler()
 	assert.NoError(err)
 }
 
@@ -43,6 +43,6 @@ func TestNewChunkedUpload_Err(t *testing.T) {
 
 	defer cu.cancel()
 
-	err = cu.chunkedUploadHandler()
+	err = cu.ChunkedUploadHandler()
 	assert.Error(err)
 }
