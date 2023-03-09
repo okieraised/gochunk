@@ -79,12 +79,6 @@ func NewChunkedUpload(fPath string, opts ...func(*ChunkedUpload)) (*ChunkedUploa
 		chunkSize: DefaultChunkSize,
 	}
 
-	mType, err := mimetype.DetectFile(fPath)
-	if err != nil {
-		return nil, err
-	}
-	c.mimeType = mType.String()
-
 	for _, opt := range opts {
 		opt(c)
 	}
@@ -100,6 +94,12 @@ func NewChunkedUpload(fPath string, opts ...func(*ChunkedUpload)) (*ChunkedUploa
 		c.ctx = ctx
 		c.cancel = cancel
 	}
+
+	mType, err := mimetype.DetectFile(fPath)
+	if err != nil {
+		return nil, err
+	}
+	c.mimeType = mType.String()
 
 	if c.handlerFunc == nil {
 		return nil, errors.New("handler function to process chunks is required")
