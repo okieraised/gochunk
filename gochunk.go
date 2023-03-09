@@ -1,4 +1,4 @@
-package main
+package gochunk
 
 import (
 	"context"
@@ -11,6 +11,7 @@ import (
 	"io"
 	"math"
 	"os"
+	"path"
 	"sync"
 )
 
@@ -20,14 +21,36 @@ const (
 	DefaultMIMEType  = "application/octet-stream"
 )
 
+// ChunkedUploadRequest defines the structure for upload request
+//   - UploadID: Common UUID value used to identify the chunks belonged to the same file.
+//   - Part: Part number of the chunk.
+//   - MD5: MD5 hash value of the chunk.
+//   - Content: byte array content of the chunk.
+//   - Complete: Determine if the last chunk has been uploaded/processed. Only the last chunk has the `true` value.
+//   - Metadata: metadata, can be anything.
 type ChunkedUploadRequest struct {
-	UploadID uuid.UUID `json:"upload_id,omitempty"`
-	Part     int       `json:"part,omitempty"`
-	MD5      string    `json:"md5,omitempty"`
-	Content  []byte    `json:"content,omitempty"`
-	Complete bool      `json:"complete,omitempty"`
+	UploadID uuid.UUID              `json:"upload_id,omitempty"`
+	Part     int                    `json:"part,omitempty"`
+	MD5      string                 `json:"md5,omitempty"`
+	Content  []byte                 `json:"content,omitempty"`
+	Complete bool                   `json:"complete,omitempty"`
+	Metadata map[string]interface{} `json:"metadata,omitempty"`
 }
 
+// ChunkedUpload defines the structure for chunked upload
+//   - uploadID: Common UUID value used to identify the chunks belonged to the same file.
+//   - fPath: Absolute path to the file to be chunked.
+//   - mimeType: MIME type of the file.
+//   - chunkSize: Size of each chunk. The default value is 10MiB.
+//   - nWorker: Number of concurrent workers to handle the chunks
+//   - ctx: Context.
+//   - cancel: Cancel function of the provided context (ctx).
+//   - handlerFunc: function to handle the chunk processing.
+//   - success: Number of chunks successfully processed (Internally used).
+//   - failure: Number of chunks unsuccessfully processed (Internally used).
+//   - total: Total number of chunks (Internally used).
+//   - cUpload: channel of chunk upload request (Internally used).
+//   - cErr: channel of error (Internally used).
 type ChunkedUpload struct {
 	uploadID    uuid.UUID
 	fPath       string
@@ -46,7 +69,13 @@ type ChunkedUpload struct {
 	cErr    chan error
 }
 
+// NewChunkedUpload creates a new chunk upload.
 func NewChunkedUpload(fPath string, opts ...func(*ChunkedUpload)) (*ChunkedUpload, error) {
+
+	if !path.IsAbs(fPath) {
+		return nil, errors.New("file path must be absolute")
+	}
+
 	c := &ChunkedUpload{
 		fPath:     fPath,
 		nWorker:   DefaultNWorker,
@@ -82,6 +111,7 @@ func NewChunkedUpload(fPath string, opts ...func(*ChunkedUpload)) (*ChunkedUploa
 	return c, nil
 }
 
+// WithChunkSize allows user to specify custom chunk size.
 func WithChunkSize(chunkSize int64) func(*ChunkedUpload) {
 	return func(c *ChunkedUpload) {
 		if chunkSize <= 0 {
@@ -92,12 +122,15 @@ func WithChunkSize(chunkSize int64) func(*ChunkedUpload) {
 	}
 }
 
+// WithMimeType allows user to specify MIME type of the file. If this option is not used, the module will automatically
+// determine the MIME type from file header.
 func WithMimeType(mimeType string) func(*ChunkedUpload) {
 	return func(c *ChunkedUpload) {
 		c.mimeType = mimeType
 	}
 }
 
+// WithNWorkers allows user to specify custom number of concurrent workers. Default is 4 workers.
 func WithNWorkers(n int) func(*ChunkedUpload) {
 	return func(c *ChunkedUpload) {
 		if n <= 0 {
@@ -107,12 +140,14 @@ func WithNWorkers(n int) func(*ChunkedUpload) {
 	}
 }
 
+// WithUploadID allows user to specify custom uuid of the chunks.
 func WithUploadID(id uuid.UUID) func(*ChunkedUpload) {
 	return func(c *ChunkedUpload) {
 		c.uploadID = id
 	}
 }
 
+// WithCtx allows user to specify custom context and its cancel function for the chunked upload.
 func WithCtx(ctx context.Context, cancelFunc context.CancelFunc) func(*ChunkedUpload) {
 	return func(c *ChunkedUpload) {
 		c.ctx = ctx
@@ -120,6 +155,7 @@ func WithCtx(ctx context.Context, cancelFunc context.CancelFunc) func(*ChunkedUp
 	}
 }
 
+// WithHandlerFunc allows user to specify custom function to handle the processing of each chunk
 func WithHandlerFunc(f func(ChunkedUploadRequest) error) func(upload *ChunkedUpload) {
 	return func(c *ChunkedUpload) {
 		c.handlerFunc = f
@@ -175,7 +211,6 @@ func (cu *ChunkedUpload) producer() {
 	for i := uint64(0); i < nChunks; i++ {
 		select {
 		case <-cu.ctx.Done():
-			fmt.Println("Upload producer encountered an error")
 			return
 		default:
 		}
@@ -209,7 +244,6 @@ func (cu *ChunkedUpload) consumer(idx int, wg *sync.WaitGroup) {
 	for {
 		select {
 		case <-cu.ctx.Done():
-			fmt.Println("Worker", idx, "encountered an error")
 			return
 		default:
 		}
